@@ -28,7 +28,7 @@
 const API_BASE = 'https://music-api.gdstudio.xyz/api.php';
 const QQ_API_BASE = 'http://localhost:3200'; // 您的QQ音乐API基础地址
 const RANK_API = 'https://60s.viki.moe/v2/ncm-rank/list';
-const DEFAULT_SOURCE = 'joox'; // 默认搜索源
+const DEFAULT_SOURCE = 'joox';
 const SEARCH_COUNT = 20;
 
 let apiCallCount = 0;
@@ -67,7 +67,7 @@ async function fetchApi(params) {
 }
 
 // ===============================
-// 3. 新增：QQ音乐封面获取函数（您提供的逻辑）
+// 3. 新增：QQ音乐封面获取函数（核心逻辑）
 // ===============================
 
 /**
@@ -123,7 +123,7 @@ async function getImageUrlByMid(albumMid, size = 300) {
  * @param {number} size 图片尺寸
  * @returns {Promise<string>} 图片URL，失败时返回默认图
  */
-async function getSongCoverUrl(songTitle, songArtist, size = 300) {
+async function getMusicCover(songTitle, songArtist, size = 300) {
   const keyword = `${songTitle} ${songArtist}`;
   const albumMid = await searchSongForCover(keyword);
   if (!albumMid) return '../img/default.png'; // 未找到专辑ID
@@ -131,6 +131,9 @@ async function getSongCoverUrl(songTitle, songArtist, size = 300) {
   const coverUrl = await getImageUrlByMid(albumMid, size);
   return coverUrl || '../img/default.png';
 }
+
+// 暴露给全局作用域，方便在事件绑定中调用
+window.getMusicCover = getMusicCover;
 
 // ===============================
 // 4. 页面初始化
@@ -197,12 +200,12 @@ async function initializePlayerCover() {
   coverImg.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7mraPluLjlhoXlrrk8L3RleHQ+PC9zdmc+';
 
   // 调用新的QQ API封装函数
-  const finalUrl = await getSongCoverUrl(title, artist, 300);
+  const finalUrl = await getMusicCover(title, artist, 300);
   coverImg.src = finalUrl;
 }
 
 // ===============================
-// 6. 业务逻辑函数（无修改）
+// 6. 业务逻辑函数（修改：搜索结果带图片）
 // ===============================
 
 async function searchMusic(keyword, source = DEFAULT_SOURCE, page = 1) {
@@ -259,7 +262,7 @@ async function performSearch(keyword) {
   }
 }
 
-function renderMusicList(songs) {
+async function renderMusicList(songs) {
   const musicListEl = document.getElementById('music-list');
   if (!musicListEl) return;
   
@@ -268,13 +271,17 @@ function renderMusicList(songs) {
     return;
   }
   
-  musicListEl.innerHTML = songs.map(song => {
+  // 先渲染卡片结构（不含图片）
+  musicListEl.innerHTML = songs.map((song, index) => {
     const safeTitle = song.title.replace(/'/g, "\\'");
     const safeArtist = song.artist.replace(/'/g, "\\'");
     const isFav = isFavorited(song.id);
 
     return `
-      <div class="music-card">
+      <div class="music-card" data-index="${index}">
+        <div class="music-card-cover-container">
+            <img class="music-card-cover" data-title="${safeTitle}" data-artist="${safeArtist}" src="../img/default.png" alt="封面">
+        </div>
         <button class="btn favorite-btn ${isFav ? 'favorited' : ''}" 
                 onclick="toggleFavorite('${song.id}', '${safeTitle}', '${safeArtist}', '${song.source}')" 
                 title="${isFav ? '取消收藏' : '收藏'}">
@@ -291,6 +298,21 @@ function renderMusicList(songs) {
       </div>
     `;
   }).join('');
+
+  // 异步加载封面图片
+  const coverElements = document.querySelectorAll('.music-card-cover');
+  coverElements.forEach(async (img) => {
+    const title = img.getAttribute('data-title');
+    const artist = img.getAttribute('data-artist');
+    try {
+      const coverUrl = await window.getMusicCover(title, artist, 150); // 搜索结果用小图
+      if (coverUrl) {
+        img.src = coverUrl;
+      }
+    } catch (e) {
+      console.error(`为歌曲 "${title} - ${artist}" 获取封面失败`, e);
+    }
+  });
 }
 
 function playSong(id, source, title, artist, picId) {
@@ -383,7 +405,7 @@ function toggleFavorite(id, title, artist, source) {
 function isFavorited(id) { return getFavorites().some(f => f.id === id); }
 
 function renderFavorites() {
-  const favoritesList = document.getElementById('favorites-list');
+  const favoritesList = document.getElementById('fans-list');
   if (!favoritesList) return;
   const favorites = getFavorites();
   if (favorites.length === 0) {

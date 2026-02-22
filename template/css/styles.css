@@ -1,3 +1,67 @@
+/* 音乐卡片封面容器 */
+.music-card-cover-container {
+    width: 60px;
+    height: 60px;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+    margin-right: 15px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 音乐卡片封面图 */
+.music-card-cover {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s ease;
+}
+
+.music-card:hover .music-card-cover {
+    transform: scale(1.05);
+}
+
+/* 调整音乐卡片布局以容纳封面 */
+.music-card {
+    display: flex;
+    align-items: center;
+    padding: 15px;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    box-shadow: 0 2px 8px rgba(30, 200, 231, 0.08);
+    transition: all 0.3s ease;
+}
+
+.music-card .music-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.music-card .music-title {
+    font-weight: 600;
+    color: #2a6fa1;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.music-card .music-artist {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.music-card .music-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.music-card .btn {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+}
+
 body {
   font-family: 'Segoe UI', 'Microsoft YaHei', Arial, sans-serif;
   background: linear-gradient(135deg, #eaf6fb 0%, #e6f0fa 100%);

@@ -21,7 +21,7 @@ async function getLyric(id, source) {
   return data.lyric || '';
 }
 
-// ================== 以下是新的QQ音乐封面获取逻辑 ==================
+// ================== QQ音乐封面获取逻辑 ==================
 
 /**
  * 根据关键词搜索歌曲并获取专辑MID
@@ -85,7 +85,7 @@ async function getSongCoverUrl(songTitle, songArtist, size = 300) {
   return coverUrl || '../img/default.png';
 }
 
-// ================== 新逻辑结束 ==================
+// ================== 核心逻辑开始 ==================
 
 document.addEventListener('DOMContentLoaded', () => {
   initPlayer();
@@ -219,8 +219,11 @@ function updateLyrics(currentTime) {
 function initControls() {
   const audio = document.getElementById('player-audio');
   const playBtn = document.getElementById('play-btn');
-  const playIcon = document.getElementById('pan>');
+  
+  // 修复：正确获取 play-icon
+  const playIcon = document.getElementById('play-icon'); 
   const pauseIcon = document.getElementById('pause-icon');
+  
   const progress = document.getElementById('player-progress');
   const cover = document.getElementById('player-cover');
 
@@ -234,13 +237,13 @@ function initControls() {
   audio.addEventListener('play', () => {
     playIcon.style.display = 'none';
     pauseIcon.style.display = 'block';
-    cover.classList.add('rotating');
+    cover.classList.add('rotating'); // 添加旋转动画
   });
 
   audio.addEventListener('pause', () => {
     playIcon.style.display = 'block';
     pauseIcon.style.display = 'none';
-    cover.classList.remove('rotating');
+    cover.classList.remove('rotating'); // 移除旋转动画
   });
 
   audio.addEventListener('timeupdate', () => {
