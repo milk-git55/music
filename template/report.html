@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>建议 - 青蓝音乐站</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="icon" type="image/x-icon" href="src/favicon.ico">
+</head>
+<body>
+  <div class="header">
+    <div class="logo"><img src="src/logo.png" alt="LOGO" style="height:44px;vertical-align:middle;margin-right:8px;">青蓝音乐站</div>
+    <nav>
+      <a href="../index.html" class="nav-link">首页</a>
+      <a href="MV.html" class="nav-link">MV</a>
+      <a href="about.html" class="nav-link">关于</a>
+      <a href="report.html" class="nav-link active">建议</a>
+    </nav>
+  </div>
+  <div class="container">
+    <div class="report-title">建议/反馈</div>
+    <form class="report-form" autocomplete="off">
+      <div class="form-row">
+        <label for="name">姓名</label>
+        <input type="text" id="name" name="name" placeholder="请输入您的姓名" disabled>
+      </div>
+      <div class="form-row">
+        <label for="email">邮箱</label>
+        <input type="email" id="email" name="email" placeholder="请输入您的邮箱" disabled>
+      </div>
+      <div class="form-row">
+        <label for="suggestion">建议内容</label>
+        <textarea id="suggestion" name="suggestion" rows="5" placeholder="请输入您的建议..." disabled></textarea>
+      </div>
+      <div class="form-row">
+        <button type="button" class="btn" disabled>提交</button>
+      </div>
+    </form>
+  </div>
+</body>
+</html>
