@@ -1,7 +1,7 @@
 // 播放器逻辑
 
 const API_BASE = 'https://music-api.gdstudio.xyz/api.php';
-const QQ_API_BASE = 'http://localhost:3200'; // 您的QQ音乐API基础地址
+const QQ_API_BASE = 'http://162.14.98.116:51029'; // 您的QQ音乐API基础地址
 
 // API 封装
 async function fetchApi(params) {
