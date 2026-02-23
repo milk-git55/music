@@ -17,6 +17,12 @@
       <a href="report.html" class="nav-link">建议</a>
     </nav>
   </div>
+
+  <!-- 添加切换播放器按钮（固定在右上角） -->
+  <div style="position: fixed; top: 80px; right: 20px; z-index: 100;">
+    <a id="switch-player-btn" class="btn" target="_blank" rel="noopener noreferrer" style="background: #3a8dde; color: white; padding: 8px 16px; border-radius: 20px; text-decoration: none; font-size: 14px;">🎵 AM风格播放器</a>
+  </div>
+
   <div class="player-container">
     <div class="player-main player-main-side">
       <div class="player-info-block">
@@ -49,7 +55,28 @@
       <input id="player-progress" type="range" min="0" max="100" value="0" step="0.1" class="player-progress">
     </div>
   </div>
-  <!-- 只引入新的播放器API逻辑 -->
+  <!-- 引入播放器API逻辑 -->
   <script src="js/player-api.js"></script>
+  <!-- 切换按钮逻辑：根据URL参数动态生成链接 -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const switchBtn = document.getElementById('switch-player-btn');
+      if (switchBtn) {
+        const params = new URLSearchParams(window.location.search);
+        const id = params.get('id');
+        const source = params.get('source');
+        const title = params.get('title');
+        const artist = params.get('artist');
+        if (id && source && title && artist) {
+          // 构建指向新播放器的链接（假设 player-am.html 位于根目录）
+          const href = `player-am.html?id=${encodeURIComponent(id)}&source=${encodeURIComponent(source)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
+          switchBtn.href = href;
+        } else {
+          // 如果缺少必要参数，隐藏按钮（或可置灰）
+          switchBtn.style.display = 'none';
+        }
+      }
+    });
+  </script>
 </body>
 </html>
