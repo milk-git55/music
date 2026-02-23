@@ -26,7 +26,7 @@
 // 1. 基础配置
 // ===============================
 const API_BASE = 'https://music-api.gdstudio.xyz/api.php';
-const QQ_API_BASE = 'http://162.14.98.116:51029'; // 您的QQ音乐API基础地址
+const QQ_API_BASE = 'https://api.wuhy.de5.net'; // 您的QQ音乐API基础地址
 const RANK_API = 'https://60s.viki.moe/v2/ncm-rank/list';
 const DEFAULT_SOURCE = 'joox';
 const SEARCH_COUNT = 20;
