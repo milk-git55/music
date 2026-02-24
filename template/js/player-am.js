@@ -24,54 +24,141 @@
     let allTimes = [];
     let lastLyric = -1;
     let bgImg = new Image();
-    bgImg.src = "src/default.png";  // 确保路径正确
+    bgImg.src = "template/src/default.png";  // 确保路径正确
+
+    // ==================== API 基础地址 ====================
+    const KUWO_API_BASE = 'https://oiapi.net/api/Kuwo';
+    const QQMUSIC_API_BASE = 'https://api.wuhy.de5.net'; // 您的 QQ 音乐 API 地址
+    const DEFAULT_BR = 1;
+
+    // ---------- 酷我 API 函数 ----------
+    async function fetchKuwoApi(params) {
+        const queryString = new URLSearchParams(params).toString();
+        const response = await fetch(`${KUWO_API_BASE}?${queryString}`);
+        if (!response.ok) throw new Error('酷我API请求失败');
+        return response.json();
+    }
+
+    async function getMusicUrlByTitle(title, br = DEFAULT_BR) {
+        try {
+            const data = await fetchKuwoApi({ msg: title, n: 1, br });
+            if (data.code === 1 && data.data && data.data.url) {
+                return data.data.url;
+            }
+            return null;
+        } catch (error) {
+            console.error('通过标题获取播放链接失败:', error);
+            return null;
+        }
+    }
+
+    // ---------- QQ音乐 API 相关函数（封面、歌词）----------
+    async function fetchQQMusicApi(endpoint, params) {
+        const queryString = new URLSearchParams(params).toString();
+        const url = `${QQMUSIC_API_BASE}${endpoint}?${queryString}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('QQ音乐API请求失败');
+        return response.json();
+    }
+
+    async function searchSongInfo(title, artist) {
+        try {
+            const keyword = `${title} ${artist}`;
+            const data = await fetchQQMusicApi('/getSearchByKey', { key: keyword, limit: 1 });
+            const songList = data?.response?.data?.song?.list;
+            if (songList && songList.length > 0) {
+                const firstSong = songList[0];
+                return {
+                    songmid: firstSong.songmid,
+                    albummid: firstSong.albummid
+                };
+            }
+            return null;
+        } catch (error) {
+            console.error('搜索歌曲信息失败:', error);
+            return null;
+        }
+    }
+
+    async function getLyricBySongmid(songmid) {
+        if (!songmid) return '';
+        try {
+            const data = await fetchQQMusicApi('/getLyric', { songmid });
+            return data?.response?.lyric || '';
+        } catch (error) {
+            console.error('获取歌词失败:', error);
+            return '';
+        }
+    }
+
+    async function getCoverUrlByAlbummid(albummid, size = 300) {
+        if (!albummid) return null;
+        try {
+            const data = await fetchQQMusicApi('/getImageUrl', { id: albummid, size: `${size}x${size}` });
+            return data?.response?.data?.imageUrl || null;
+        } catch (error) {
+            console.error('获取封面失败:', error);
+            return null;
+        }
+    }
 
     // ==================== 从 URL 获取参数 ====================
     const urlParams = new URLSearchParams(window.location.search);
     const id = urlParams.get('id');
-    const source = urlParams.get('source');
+    const source = urlParams.get('source') || 'kuwo';
     const title = urlParams.get('title') || '未知歌曲';
     const artist = urlParams.get('artist') || '未知歌手';
+    const picId = urlParams.get('picId');
 
-    // 显示歌曲名称
     audioName.textContent = `${title} - ${artist}`;
 
-    // ==================== 调用 API 获取数据 ====================
+    // ==================== 加载歌曲 ====================
     async function loadSong() {
-        if (!id || !source) {
+        if (!title) {
             audioName.textContent = '参数错误，无法加载歌曲';
             return;
         }
 
         try {
-            const playUrl = await getMusicUrl(id, source);
+            // 1. 获取播放链接（酷我）
+            const playUrl = await getMusicUrlByTitle(title);
             if (playUrl) {
                 audioPlayer.src = playUrl;
             } else {
                 throw new Error('无法获取播放链接');
             }
 
-            const lyricText = await getLyric(id, source);
-            if (lyricText) {
-                processLrcText(lyricText);
+            // 2. 设置封面（优先使用 picId，否则通过 albummid 获取）
+            if (picId && picId !== '') {
+                bgImg.src = picId;
+            } else {
+                const songInfo = await searchSongInfo(title, artist);
+                if (songInfo && songInfo.albummid) {
+                    const coverUrl = await getCoverUrlByAlbummid(songInfo.albummid);
+                    if (coverUrl) bgImg.src = coverUrl;
+                }
+            }
+
+            // 3. 获取歌词
+            const songInfo = await searchSongInfo(title, artist);
+            if (songInfo && songInfo.songmid) {
+                const lyricText = await getLyricBySongmid(songInfo.songmid);
+                if (lyricText && lyricText.trim() !== '') {
+                    processLrcText(lyricText);
+                } else {
+                    lyricsElement.innerHTML = '<div class="item"><p>暂无歌词</p></div>';
+                }
             } else {
                 lyricsElement.innerHTML = '<div class="item"><p>暂无歌词</p></div>';
             }
 
-            const coverUrl = await getSongCoverUrl(title, artist, 300);
-            if (coverUrl) {
-                bgImg.src = coverUrl;
-            }
         } catch (error) {
             console.error('加载歌曲失败:', error);
             audioName.textContent = '加载失败，请重试';
         }
     }
 
-    // 立即执行加载
-    (async () => {
-        await loadSong();
-    })();
+    loadSong();
 
     // ==================== 图片加载完成后触发背景动画 ====================
     bgImg.onload = () => {
@@ -80,7 +167,6 @@
         svgcontainer.style.backgroundSize = "cover";
         svgcontainer.style.backgroundPosition = "center";
 
-        // 流体背景 canvas 初始化
         const fluidCanvas = document.querySelector("canvas.canvas");
         const fCtx = fluidCanvas.getContext('2d');
 
@@ -91,7 +177,6 @@
         window.onresize = resize;
         resize();
 
-        // Slice 类定义
         class Slice {
             constructor(img, index, canvas) {
                 this.img = img;
@@ -102,9 +187,7 @@
                 this.velocity = (Math.random() - 0.5) * 0.005;
                 this.scale = 1.2;
             }
-            update() {
-                this.angle += this.velocity;
-            }
+            update() { this.angle += this.velocity; }
             draw() {
                 const { width, height } = this.canvas;
                 const ctx = this.ctx;

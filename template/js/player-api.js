@@ -1,103 +1,101 @@
-// 播放器逻辑
+// ===============================
+// 播放器逻辑 - 酷我音频 + QQ音乐封面/歌词
+// ===============================
 
-const API_BASE = 'https://music-api.gdstudio.xyz/api.php';
-const QQ_API_BASE = 'https://api.wuhy.de5.net'; // 您的QQ音乐API基础地址
+const KUWO_API_BASE = 'https://oiapi.net/api/Kuwo';
+const QQMUSIC_API_BASE = 'https://api.wuhy.de5.net'; // 您的 QQ 音乐 API 地址
+const DEFAULT_BR = 1; // 酷我音质：1=无损
 
-// API 封装
-async function fetchApi(params) {
+// ---------- 酷我 API 相关函数 ----------
+async function fetchKuwoApi(params) {
   const queryString = new URLSearchParams(params).toString();
-  const response = await fetch(`${API_BASE}?${queryString}`);
-  if (!response.ok) throw new Error('API请求失败');
+  const response = await fetch(`${KUWO_API_BASE}?${queryString}`);
+  if (!response.ok) throw new Error('酷我API请求失败');
   return response.json();
 }
 
-async function getMusicUrl(id, source) {
-  const data = await fetchApi({ types: 'url', source, id, br: 320 });
-  return data.url || null;
-}
-
-async function getLyric(id, source) {
-  const data = await fetchApi({ types: 'lyric', source, id });
-  return data.lyric || '';
-}
-
-// ================== QQ音乐封面获取逻辑 ==================
-
-/**
- * 根据关键词搜索歌曲并获取专辑MID
- * @param {string} keyword 歌名+歌手，如 "周杰伦 晴天"
- * @returns {Promise<string|null>} 专辑MID 或 null
- */
-async function searchSongForCover(keyword) {
+async function getMusicUrlByTitle(title, br = DEFAULT_BR) {
   try {
-    const url = `${QQ_API_BASE}/getSearchByKey?key=${encodeURIComponent(keyword)}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    
-    // 按您给的返回结构提取 albummid
-    const albumMid = json?.response?.data?.song?.list?.[0]?.albummid;
-    return albumMid || null;
+    const data = await fetchKuwoApi({ msg: title, n: 1, br });
+    if (data.code === 1 && data.data && data.data.url) {
+      return data.data.url;
+    }
+    return null;
   } catch (error) {
-    console.error('搜索歌曲封面失败:', error);
+    console.error('通过标题获取播放链接失败:', error);
     return null;
   }
 }
 
-/**
- * 根据专辑MID获取图片URL
- * @param {string} albumMid 专辑MID
- * @param {number} size 图片尺寸 (300, 500, 800)
- * @returns {Promise<string|null>} 图片URL 或 null
- */
-async function getImageUrlByMid(albumMid, size = 300) {
-  if (!albumMid) return null;
+// ---------- QQ音乐 API 相关函数（封面、歌词）----------
+async function fetchQQMusicApi(endpoint, params) {
+  const queryString = new URLSearchParams(params).toString();
+  const url = `${QQMUSIC_API_BASE}${endpoint}?${queryString}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('QQ音乐API请求失败');
+  return response.json();
+}
+
+// 通过歌名+歌手搜索，获取第一个结果的 songmid 和 albummid
+async function searchSongInfo(title, artist) {
   try {
-    const url = `${QQ_API_BASE}/getImageUrl?id=${albumMid}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    
-    // 提取 imageUrl
-    let imageUrl = json?.response?.data?.imageUrl;
-    if (!imageUrl) return null;
-    
-    // 替换尺寸
-    imageUrl = imageUrl.replace(/T002R\d+x\d+/, `T002R${size}x${size}`);
-    return imageUrl;
+    const keyword = `${title} ${artist}`;
+    const data = await fetchQQMusicApi('/getSearchByKey', { key: keyword, limit: 1 });
+    // 根据用户提供的返回示例，歌曲列表在 response.data.song.list 中
+    const songList = data?.response?.data?.song?.list;
+    if (songList && songList.length > 0) {
+      const firstSong = songList[0];
+      return {
+        songmid: firstSong.songmid,
+        albummid: firstSong.albummid
+      };
+    }
+    return null;
   } catch (error) {
-    console.error('获取图片URL失败:', error);
+    console.error('搜索歌曲信息失败:', error);
     return null;
   }
 }
 
-/**
- * 获取歌曲封面（封装后方便调用）
- * @param {string} songTitle 歌名
- * @param {string} songArtist 歌手
- * @param {number} size 图片尺寸
- * @returns {Promise<string>} 图片URL，失败时返回默认图
- */
-async function getSongCoverUrl(songTitle, songArtist, size = 300) {
-  const keyword = `${songTitle} ${songArtist}`;
-  const albumMid = await searchSongForCover(keyword);
-  if (!albumMid) return '../img/default.png'; // 未找到专辑ID
-  
-  const coverUrl = await getImageUrlByMid(albumMid, size);
-  return coverUrl || '../img/default.png';
+// 获取歌词
+async function getLyricBySongmid(songmid) {
+  if (!songmid) return '';
+  try {
+    const data = await fetchQQMusicApi('/getLyric', { songmid });
+    // 根据用户提供的返回示例，歌词在 response.lyric 中
+    return data?.response?.lyric || '';
+  } catch (error) {
+    console.error('获取歌词失败:', error);
+    return '';
+  }
 }
 
-// ================== 核心逻辑开始 ==================
+// 获取封面
+async function getCoverUrlByAlbummid(albummid, size = 300) {
+  if (!albummid) return null;
+  try {
+    const data = await fetchQQMusicApi('/getImageUrl', { id: albummid, size: `${size}x${size}` });
+    // 根据文档，图片 URL 在 response.data.imageUrl 中
+    return data?.response?.data?.imageUrl || null;
+  } catch (error) {
+    console.error('获取封面失败:', error);
+    return null;
+  }
+}
 
+// ---------- 播放器初始化 ----------
 document.addEventListener('DOMContentLoaded', () => {
+  if (!document.getElementById('player-title')) return;
   initPlayer();
 });
 
 async function initPlayer() {
   const params = new URLSearchParams(window.location.search);
-  const id = params.get('id');
-  const source = params.get('source');
+  const id = params.get('id');           // 酷我的 rid，保留备用
+  const source = params.get('source') || 'kuwo';
   const title = params.get('title') || '未知歌曲';
   const artist = params.get('artist') || '未知歌手';
-  const picId = params.get('picId'); // 保留原有参数，但不再用于封面获取
+  const picId = params.get('picId');     // 从首页传递的封面 URL
 
   const titleEl = document.getElementById('player-title');
   const artistEl = document.getElementById('player-artist');
@@ -114,36 +112,48 @@ async function initPlayer() {
   if (artistEl) artistEl.textContent = decodeURIComponent(artist);
   if (lyricsContainer) lyricsContainer.innerHTML = '<p class="lyrics-line">歌词加载中...</p>';
 
-  if (!id || !source) {
+  if (!title) {
     titleEl.textContent = '参数错误';
     titleEl.style.color = '#ff6b6b';
     return;
   }
 
   try {
-    // 1. 获取播放链接
-    const playUrl = await getMusicUrl(id, source);
+    // 1. 获取播放链接（酷我）
+    const playUrl = await getMusicUrlByTitle(title);
     if (playUrl) {
       audioEl.src = playUrl;
     } else {
       throw new Error('无法获取播放链接');
     }
 
-    // 2. 获取封面 (使用新的QQ API逻辑)
+    // 2. 设置封面（优先使用首页传递的 picId，否则通过 albummid 获取）
     if (coverEl) {
-        // 直接调用新的函数，根据歌名和歌手获取封面
-        const picUrl = await getSongCoverUrl(title, artist, 300);
-        coverEl.src = picUrl;
+      if (picId && picId !== '') {
+        coverEl.src = picId;
+      } else {
+        // 通过 QQ音乐搜索获取 albummid，再获取封面
+        const songInfo = await searchSongInfo(title, artist);
+        if (songInfo && songInfo.albummid) {
+          const coverUrl = await getCoverUrlByAlbummid(songInfo.albummid);
+          coverEl.src = coverUrl || '../img/default.png';
+        } else {
+          coverEl.src = '../img/default.png';
+        }
+      }
     }
 
     // 3. 获取歌词
-    if (lyricsContainer) {
-        const lyricText = await getLyric(id, source);
-        if (lyricText) {
-          parseLyrics(lyricText);
-        } else {
-          lyricsContainer.innerHTML = '<p class="lyrics-line">暂无歌词</p>';
-        }
+    const songInfo = await searchSongInfo(title, artist);
+    if (songInfo && songInfo.songmid) {
+      const lyricText = await getLyricBySongmid(songInfo.songmid);
+      if (lyricText && lyricText.trim() !== '') {
+        parseLyrics(lyricText);
+      } else {
+        lyricsContainer.innerHTML = '<p class="lyrics-line">暂无歌词</p>';
+      }
+    } else {
+      lyricsContainer.innerHTML = '<p class="lyrics-line">暂无歌词</p>';
     }
 
   } catch (error) {
@@ -151,14 +161,14 @@ async function initPlayer() {
     titleEl.textContent = '加载失败';
     titleEl.style.color = '#ff6b6b';
     if (lyricsContainer) {
-        lyricsContainer.innerHTML = '<p class="lyrics-line">歌曲加载失败</p>';
+      lyricsContainer.innerHTML = '<p class="lyrics-line">歌曲加载失败</p>';
     }
   }
 
   initControls();
 }
 
-// 歌词解析
+// 歌词解析函数（从原播放器复制）
 let lyrics = [];
 let currentLyricIndex = -1;
 
@@ -216,14 +226,12 @@ function updateLyrics(currentTime) {
   }
 }
 
+// 播放器控制
 function initControls() {
   const audio = document.getElementById('player-audio');
   const playBtn = document.getElementById('play-btn');
-  
-  // 修复：正确获取 play-icon
   const playIcon = document.getElementById('play-icon'); 
   const pauseIcon = document.getElementById('pause-icon');
-  
   const progress = document.getElementById('player-progress');
   const cover = document.getElementById('player-cover');
 
@@ -237,13 +245,13 @@ function initControls() {
   audio.addEventListener('play', () => {
     playIcon.style.display = 'none';
     pauseIcon.style.display = 'block';
-    cover.classList.add('rotating'); // 添加旋转动画
+    cover.classList.add('rotating');
   });
 
   audio.addEventListener('pause', () => {
     playIcon.style.display = 'block';
     pauseIcon.style.display = 'none';
-    cover.classList.remove('rotating'); // 移除旋转动画
+    cover.classList.remove('rotating');
   });
 
   audio.addEventListener('timeupdate', () => {

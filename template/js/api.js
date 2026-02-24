@@ -25,11 +25,10 @@
 // ===============================
 // 1. 基础配置
 // ===============================
-const API_BASE = 'https://music-api.gdstudio.xyz/api.php';
-const QQ_API_BASE = 'https://api.wuhy.de5.net'; // 您的QQ音乐API基础地址
+const KUWO_API_BASE = 'https://oiapi.net/api/Kuwo';
 const RANK_API = 'https://60s.viki.moe/v2/ncm-rank/list';
-const DEFAULT_SOURCE = 'joox';
-const SEARCH_COUNT = 20;
+const SEARCH_LIMIT = 20;
+const DEFAULT_BR = 1; // 默认音质：1=无损，2=高品质，3=标准，可根据需求调整
 
 let apiCallCount = 0;
 let lastApiCallTime = Date.now();
@@ -52,94 +51,113 @@ function checkApiLimit() {
   apiCallCount++;
 }
 
-async function fetchApi(params) {
+async function fetchKuwoApi(params) {
   try {
     checkApiLimit();
     const queryString = new URLSearchParams(params).toString();
-    const url = `${API_BASE}?${queryString}`;
+    const url = `${KUWO_API_BASE}?${queryString}`;
     const response = await fetch(url);
     if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
     return await response.json();
   } catch (error) {
-    console.error('API请求失败:', error);
+    console.error('酷我API请求失败:', error);
     throw error;
   }
 }
 
 // ===============================
-// 3. 新增：QQ音乐封面获取函数（核心逻辑）
+// 3. 搜索音乐（返回列表）
 // ===============================
-
-/**
- * 根据关键词搜索歌曲并获取专辑MID
- * @param {string} keyword 歌名+歌手，如 "周杰伦 晴天"
- * @returns {Promise<string|null>} 专辑MID 或 null
- */
-async function searchSongForCover(keyword) {
+async function searchMusic(keyword, page = 1, limit = SEARCH_LIMIT, br = DEFAULT_BR) {
   try {
-    const url = `${QQ_API_BASE}/getSearchByKey?key=${encodeURIComponent(keyword)}`;
-    const res = await fetch(url);
-    const json = await res.json();
+    const data = await fetchKuwoApi({
+      msg: keyword,
+      page: page,
+      limit: limit,
+      br: br
+    });
     
-    // 按您给的返回结构提取 albummid
-    const albumMid = json?.response?.data?.song?.list?.[0]?.albummid;
-    return albumMid || null;
+    if (data.code !== 1 || !data.data || !Array.isArray(data.data)) {
+      console.warn('API返回数据格式异常:', data);
+      return [];
+    }
+
+    return data.data.map(item => ({
+      id: item.rid,
+      title: item.song || '未知歌曲',
+      artist: item.singer || '未知歌手',
+      album: item.album || '',
+      picId: item.picture || '',
+      source: 'kuwo',
+      types: item.types || [],
+      url: item.url || null
+    }));
   } catch (error) {
-    console.error('搜索歌曲封面失败:', error);
+    console.error('搜索失败:', error);
+    return [];
+  }
+}
+
+// ===============================
+// 4. 获取播放链接（使用 msg + n=1 + br）
+// ===============================
+async function getMusicUrlByTitle(title, br = DEFAULT_BR) {
+  try {
+    const data = await fetchKuwoApi({
+      msg: title,
+      n: 1,
+      br: br
+    });
+    
+    // 注意：当使用 n=1 时，返回的 data.data 是一个对象，不是数组
+    if (data.code === 1 && data.data && data.data.url) {
+      return data.data.url;
+    }
+    return null;
+  } catch (error) {
+    console.error('通过标题获取播放链接失败:', error);
     return null;
   }
 }
 
-/**
- * 根据专辑MID获取图片URL
- * @param {string} albumMid 专辑MID
- * @param {number} size 图片尺寸 (300, 500, 800)
- * @returns {Promise<string|null>} 图片URL 或 null
- */
-async function getImageUrlByMid(albumMid, size = 300) {
-  if (!albumMid) return null;
+// ===============================
+// 5. 下载歌曲（需要标题）
+// ===============================
+async function downloadSong(id, title) {
   try {
-    const url = `${QQ_API_BASE}/getImageUrl?id=${albumMid}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    
-    // 提取 imageUrl
-    let imageUrl = json?.response?.data?.imageUrl;
-    if (!imageUrl) return null;
-    
-    // 替换尺寸
-    imageUrl = imageUrl.replace(/T002R\d+x\d+/, `T002R${size}x${size}`);
-    return imageUrl;
+    const url = await getMusicUrlByTitle(title);
+    if (!url) return alert('无法获取下载链接');
+    window.open(url, '_blank');
   } catch (error) {
-    console.error('获取图片URL失败:', error);
-    return null;
+    alert('下载失败: ' + error.message);
   }
 }
 
-/**
- * 获取歌曲封面（封装后方便调用）
- * @param {string} songTitle 歌名
- * @param {string} songArtist 歌手
- * @param {number} size 图片尺寸
- * @returns {Promise<string>} 图片URL，失败时返回默认图
- */
-async function getMusicCover(songTitle, songArtist, size = 300) {
-  const keyword = `${songTitle} ${songArtist}`;
-  const albumMid = await searchSongForCover(keyword);
-  if (!albumMid) return '../img/default.png'; // 未找到专辑ID
-  
-  const coverUrl = await getImageUrlByMid(albumMid, size);
-  return coverUrl || '../img/default.png';
+// ===============================
+// 6. 歌词（酷我 API 暂不支持）
+// ===============================
+async function getLyric(id, source) {
+  return '';
 }
 
-// 暴露给全局作用域，方便在事件绑定中调用
-window.getMusicCover = getMusicCover;
+// ===============================
+// 7. 播放歌曲（跳转播放器，传递 title 作为关键参数）
+// ===============================
+function playSong(id, source, title, artist, picId) {
+  const params = new URLSearchParams({ 
+    id, 
+    source, 
+    title, 
+    artist, 
+    picId: picId || ''
+  });
+  window.location.href = `template/player.html?${params.toString()}`;
+}
 
 // ===============================
-// 4. 页面初始化
+// 8. 页面初始化
 // ===============================
 document.addEventListener('DOMContentLoaded', function() {
-  // 1. 加载动画控制
   const loadingDiv = document.createElement('div');
   loadingDiv.className = 'page-loading';
   loadingDiv.innerHTML = '<div class="loading-spinner"></div>';
@@ -152,7 +170,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 300);
   });
   
-  // 2. 绑定搜索事件
   try {
     const searchInput = document.getElementById('search-input');
     const searchBtn = document.getElementById('search-btn');
@@ -177,66 +194,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
   if (document.getElementById('rankings-container')) initializeRankings();
   if (document.getElementById('favorites-list')) renderFavorites();
-  
-  // 3. 初始化播放页专辑图 (最高优先级)
-  initializePlayerCover();
 });
 
 // ===============================
-// 5. 原有封面获取函数（已替换为QQ API）
+// 9. 搜索执行与渲染
 // ===============================
-
-async function initializePlayerCover() {
-  const coverImg = document.getElementById('cover') || document.querySelector('.album-cover img');
-  if (!coverImg) return;
-  
-  const urlParams = new URLSearchParams(window.location.search);
-  const title = urlParams.get('title') || '';
-  const artist = urlParams.get('artist') || '';
-  
-  console.log('使用QQ API初始化专辑图:', { title, artist });
-  
-  // 设置加载占位图
-  coverImg.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48cmVjdCB3aWR0aD0iMzAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTYiIGZpbGw9IiM5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj7mraPluLjlhoXlrrk8L3RleHQ+PC9zdmc+';
-
-  // 调用新的QQ API封装函数
-  const finalUrl = await getMusicCover(title, artist, 300);
-  coverImg.src = finalUrl;
-}
-
-// ===============================
-// 6. 业务逻辑函数（修改：搜索结果带图片）
-// ===============================
-
-async function searchMusic(keyword, source = DEFAULT_SOURCE, page = 1) {
-  const data = await fetchApi({
-    types: 'search',
-    source: source,
-    name: keyword,
-    count: SEARCH_COUNT,
-    pages: page
-  });
-  if (!Array.isArray(data)) return [];
-  return data.map(item => ({
-    id: item.id,
-    title: item.name,
-    artist: item.artist.join(', '),
-    album: item.album,
-    picId: item.pic_id,
-    lyricId: item.lyric_id,
-    source: item.source
-  }));
-}
-
-function showRankings() {
-  const rankingsSection = document.getElementById('rankings-section');
-  const musicList = document.getElementById('music-list');
-  const resultDiv = document.getElementById('search-result');
-  if (rankingsSection) rankingsSection.style.display = 'block';
-  if (musicList) musicList.innerHTML = '';
-  if (resultDiv) resultDiv.style.display = 'none';
-}
-
 async function performSearch(keyword) {
   if (!keyword) return;
   const rankingsSection = document.getElementById('rankings-section');
@@ -251,7 +213,7 @@ async function performSearch(keyword) {
   showSearchResult(0, `正在搜索 "${keyword}"...`);
   
   try {
-    const songs = await searchMusic(keyword, DEFAULT_SOURCE);
+    const songs = await searchMusic(keyword);
     renderMusicList(songs);
     showSearchResult(songs.length, keyword);
   } catch (error) {
@@ -262,7 +224,7 @@ async function performSearch(keyword) {
   }
 }
 
-async function renderMusicList(songs) {
+function renderMusicList(songs) {
   const musicListEl = document.getElementById('music-list');
   if (!musicListEl) return;
   
@@ -271,7 +233,6 @@ async function renderMusicList(songs) {
     return;
   }
   
-  // 先渲染卡片结构（不含图片）
   musicListEl.innerHTML = songs.map((song, index) => {
     const safeTitle = song.title.replace(/'/g, "\\'");
     const safeArtist = song.artist.replace(/'/g, "\\'");
@@ -280,7 +241,7 @@ async function renderMusicList(songs) {
     return `
       <div class="music-card" data-index="${index}">
         <div class="music-card-cover-container">
-            <img class="music-card-cover" data-title="${safeTitle}" data-artist="${safeArtist}" src="../img/default.png" alt="封面">
+            <img class="music-card-cover" src="${song.picId || '../img/default.png'}" alt="封面" onerror="this.src='../img/default.png'">
         </div>
         <button class="btn favorite-btn ${isFav ? 'favorited' : ''}" 
                 onclick="toggleFavorite('${song.id}', '${safeTitle}', '${safeArtist}', '${song.source}')" 
@@ -293,46 +254,11 @@ async function renderMusicList(songs) {
         </div>
         <div class="music-actions">
           <button class="btn" onclick="playSong('${song.id}', '${song.source}', '${safeTitle}', '${safeArtist}', '${song.picId}')">播放</button>
-          <button class="btn" onclick="downloadSong('${song.id}', '${song.source}')">下载</button>
+          <button class="btn" onclick="downloadSong('${song.id}', '${safeTitle}')">下载</button>
         </div>
       </div>
     `;
   }).join('');
-
-  // 异步加载封面图片
-  const coverElements = document.querySelectorAll('.music-card-cover');
-  coverElements.forEach(async (img) => {
-    const title = img.getAttribute('data-title');
-    const artist = img.getAttribute('data-artist');
-    try {
-      const coverUrl = await window.getMusicCover(title, artist, 150); // 搜索结果用小图
-      if (coverUrl) {
-        img.src = coverUrl;
-      }
-    } catch (e) {
-      console.error(`为歌曲 "${title} - ${artist}" 获取封面失败`, e);
-    }
-  });
-}
-
-function playSong(id, source, title, artist, picId) {
-  const params = new URLSearchParams({ id, source, title, artist, picId: picId || '' });
-  window.location.href = `template/player.html?${params.toString()}`;
-}
-
-async function getMusicUrl(id, source, br = 320) {
-  const data = await fetchApi({ types: 'url', source, id, br });
-  return data.url || null;
-}
-
-async function downloadSong(id, source) {
-  try {
-    const url = await getMusicUrl(id, source);
-    if (!url) return alert('无法获取下载链接');
-    window.open(url, '_blank');
-  } catch (error) {
-    alert('下载失败: ' + error.message);
-  }
 }
 
 function showSearchResult(count, keyword) {
@@ -349,8 +275,17 @@ function showSearchResult(count, keyword) {
   resultDiv.style.display = 'block';
 }
 
+function showRankings() {
+  const rankingsSection = document.getElementById('rankings-section');
+  const musicList = document.getElementById('music-list');
+  const resultDiv = document.getElementById('search-result');
+  if (rankingsSection) rankingsSection.style.display = 'block';
+  if (musicList) musicList.innerHTML = '';
+  if (resultDiv) resultDiv.style.display = 'none';
+}
+
 // ===============================
-// 7. 排行榜功能（无修改）
+// 10. 排行榜功能
 // ===============================
 async function initializeRankings() {
   const rankingsContainer = document.getElementById('rankings-container');
@@ -383,7 +318,7 @@ async function initializeRankings() {
 }
 
 // ===============================
-// 8. 收藏功能（无修改）
+// 11. 收藏功能
 // ===============================
 function getFavorites() { return JSON.parse(localStorage.getItem('musicFavorites') || '[]'); }
 function saveFavorites(favorites) { localStorage.setItem('musicFavorites', JSON.stringify(favorites)); }
@@ -405,7 +340,7 @@ function toggleFavorite(id, title, artist, source) {
 function isFavorited(id) { return getFavorites().some(f => f.id === id); }
 
 function renderFavorites() {
-  const favoritesList = document.getElementById('fans-list');
+  const favoritesList = document.getElementById('favorites-list'); // 根据实际ID调整
   if (!favoritesList) return;
   const favorites = getFavorites();
   if (favorites.length === 0) {
@@ -417,7 +352,7 @@ function renderFavorites() {
       <div class="favorite-item-title">${item.title}</div>
       <div class="favorite-item-artist">${item.artist}</div>
       <div class="favorite-item-actions">
-        <button class="btn" onclick="event.stopPropagation(); playSong('${item.id}', '${item.source}')">播放</button>
+        <button class="btn" onclick="event.stopPropagation(); playSong('${item.id}', '${item.source}', '${item.title}', '${item.artist}', '')">播放</button>
         <button class="btn remove-btn" onclick="event.stopPropagation(); toggleFavorite('${item.id}', '', '', '${item.source}')" title="取消收藏">×</button>
       </div>
     </div>
